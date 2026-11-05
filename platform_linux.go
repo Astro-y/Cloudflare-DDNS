@@ -154,7 +154,7 @@ func syncDirectory(path string) error {
 
 func replaceFile(from, to string) error { return os.Rename(from, to) }
 
-func InstallLocal(ctx context.Context, paths Paths, store *Store, cfg Config, token string) (err error) {
+func InstallLocal(ctx context.Context, paths Paths, store *Store, cfg Config, token string, accountID ...string) (err error) {
 	if err := RequireAdmin(); err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func InstallLocal(ctx context.Context, paths Paths, store *Store, cfg Config, to
 	if err := validateTokenText(token); err != nil {
 		return err
 	}
-	return installFiles(ctx, paths, store, cfg, token, HasSystemd(), GetServiceStatus(), os.Executable, systemctl)
+	return installFiles(ctx, paths, store, cfg, token, HasSystemd(), GetServiceStatus(), os.Executable, systemctl, accountID...)
 }
 
 func UninstallLocal(ctx context.Context, paths Paths, keepConfig bool) error {

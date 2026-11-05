@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^[0-9A-Za-z._+-]+$')]
-    [string]$Version = '0.1.0',
+    [string]$Version = '0.1.1',
     [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'dist'),
     [switch]$SkipTests
 )

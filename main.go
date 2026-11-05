@@ -17,6 +17,10 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--internal-version" {
+		fmt.Println(version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	store := NewStore(DefaultPaths())
@@ -56,7 +60,7 @@ func synchronize(ctx context.Context, store *Store, force bool) ([]SyncResult, e
 	if err != nil {
 		return nil, fmt.Errorf("读取配置：%w", err)
 	}
-	token, err := store.LoadToken()
+	credentials, err := store.LoadCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("读取凭据：%w", err)
 	}
@@ -64,7 +68,7 @@ func synchronize(ctx context.Context, store *Store, force bool) ([]SyncResult, e
 	if err != nil {
 		return nil, fmt.Errorf("读取状态：%w", err)
 	}
-	engine := SyncEngine{API: NewCFClient(token), Resolver: NewIPResolver()}
+	engine := SyncEngine{API: NewCFClient(credentials.Token, credentials.AccountID), Resolver: NewIPResolver()}
 	previousConfig := cfg
 	previousConfig.Records = append([]RecordConfig(nil), cfg.Records...)
 	results := engine.Sync(ctx, &cfg, &state, force)

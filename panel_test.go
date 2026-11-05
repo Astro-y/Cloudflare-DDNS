@@ -139,7 +139,7 @@ func TestPanelReadOnlyCloudRefreshDoesNotSaveConfig(t *testing.T) {
 	before, _ := os.ReadFile(store.Paths.ConfigFile())
 	api := &panelTestCloud{records: []DNSRecord{{ID: "r", Type: "A", Name: "home.example.com", Content: "8.8.8.8"}}}
 	p := NewPanel(store, strings.NewReader("y\n"), io.Discard)
-	p.apiFactory = func(string) CloudAPI { return api }
+	p.apiFactory = func(string, string) CloudAPI { return api }
 	if err := p.details(context.Background()); err != nil {
 		t.Fatal(err)
 	}

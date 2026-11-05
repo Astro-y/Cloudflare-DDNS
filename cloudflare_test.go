@@ -35,6 +35,9 @@ func TestCFTokenAndPagination(t *testing.T) {
 		if r.URL.Path != "/zones" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
+		if r.URL.Query().Get("account.id") != "" {
+			t.Error("user token unexpectedly filtered by account")
+		}
 		pages = append(pages, r.URL.Query().Get("page"))
 		fmt.Fprintf(w, `{"success":true,"result":[{"id":"z%s","name":"example%s.com"}],"result_info":{"total_pages":2}}`, pages[len(pages)-1], pages[len(pages)-1])
 	})
@@ -44,6 +47,111 @@ func TestCFTokenAndPagination(t *testing.T) {
 	zones, err := client.ListZones(context.Background())
 	if err != nil || len(zones) != 2 || strings.Join(pages, ",") != "1,2" {
 		t.Fatalf("zones=%v pages=%v err=%v", zones, pages, err)
+	}
+}
+
+func TestCFAccountTokenVerifyAndZonePagination(t *testing.T) {
+	const accountID = "0123456789abcdef0123456789ABCDEF"
+	var pages []string
+	client, _ := testCF(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer private-token-should-never-appear" {
+			t.Error("account request lost method or bearer authentication")
+		}
+		if r.URL.Path == "/accounts/"+accountID+"/tokens/verify" {
+			fmt.Fprint(w, `{"success":true,"result":{"status":"active"}}`)
+			return
+		}
+		if r.URL.Path != "/zones" || r.URL.Query().Get("account.id") != accountID || r.URL.Query().Get("per_page") != "50" {
+			t.Errorf("unexpected account request: %s", r.URL.RequestURI())
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		fmt.Fprintf(w, `{"success":true,"result":[{"id":"z%s","name":"example%s.com"}],"result_info":{"total_pages":2}}`, page, page)
+	})
+	client.AccountID = accountID
+	if err := client.VerifyToken(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	zones, err := client.ListZones(context.Background())
+	if err != nil || len(zones) != 2 || strings.Join(pages, ",") != "1,2" {
+		t.Fatalf("zones=%v pages=%v err=%v", zones, pages, err)
+	}
+	constructed := NewCFClient("account-test-token", accountID)
+	if constructed.AccountID != accountID {
+		t.Fatal("constructor did not preserve explicit account ID")
+	}
+}
+
+func TestCFAccountTokenRequiresActiveStatus(t *testing.T) {
+	const accountID = "0123456789abcdef0123456789abcdef"
+	for _, status := range []string{"active", "disabled", "expired", ""} {
+		t.Run(status, func(t *testing.T) {
+			client, _ := testCF(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/accounts/"+accountID+"/tokens/verify" {
+					t.Errorf("wrong verification endpoint: %s", r.URL.Path)
+				}
+				fmt.Fprintf(w, `{"success":true,"result":{"status":%q}}`, status)
+			})
+			client.AccountID = accountID
+			err := client.VerifyToken(context.Background())
+			if (err == nil) != (status == "active") {
+				t.Fatalf("status=%q err=%v", status, err)
+			}
+		})
+	}
+}
+
+func TestCFRejectsInvalidAccountIDBeforeRequests(t *testing.T) {
+	var requests atomic.Int32
+	client, _ := testCF(t, func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		fmt.Fprint(w, `{"success":true,"result":{"status":"active"}}`)
+	})
+	for _, id := range []string{
+		"too-short", strings.Repeat("a", 33), strings.Repeat("g", 32),
+		"../" + strings.Repeat("a", 29), strings.Repeat("a", 31) + "/",
+		strings.Repeat("a", 31) + "?", strings.Repeat("a", 31) + "\n",
+		" " + strings.Repeat("a", 32), strings.Repeat("界", 32),
+	} {
+		client.AccountID = id
+		if err := client.VerifyToken(context.Background()); err == nil {
+			t.Fatal("invalid account ID accepted for token verification")
+		}
+		if _, err := client.ListZones(context.Background()); err == nil {
+			t.Fatal("invalid account ID accepted for zone listing")
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("invalid account IDs made %d requests", requests.Load())
+	}
+	for _, id := range []string{"", strings.Repeat("a", 32), strings.Repeat("F", 32)} {
+		if err := ValidateAccountID(id); err != nil {
+			t.Fatalf("valid account ID rejected: %v", err)
+		}
+	}
+}
+
+func TestCFVerificationAuthenticationErrorsExplainTokenKind(t *testing.T) {
+	for _, accountID := range []string{"", "0123456789abcdef0123456789abcdef"} {
+		t.Run(accountID, func(t *testing.T) {
+			client, _ := testCF(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":1000,"message":"private-token-should-never-appear"}]}`)
+			})
+			client.AccountID = accountID
+			err := client.VerifyToken(context.Background())
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusUnauthorized || strings.Contains(err.Error(), "private-token") || !strings.Contains(err.Error(), "Account ID") {
+				t.Fatalf("verification error lost safe context: %v", err)
+			}
+			kind := "用户级 Token"
+			if accountID != "" {
+				kind = "账户级 Token"
+			}
+			if !strings.Contains(err.Error(), kind) {
+				t.Fatalf("error missing token kind: %v", err)
+			}
+		})
 	}
 }
 

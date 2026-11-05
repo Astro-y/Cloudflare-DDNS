@@ -16,6 +16,7 @@
 - 🔄 **自动同步** - 地址变化时更新，定期核对并修复云端 IP、TTL 和代理状态。
 - 🛡️ **记录保护** - 接管前检查多记录及 CNAME 冲突，探测失败时保留原 DNS。
 - ⚙️ **后台管理** - 支持 systemd 启停、开机自启、崩溃重启及日志查看。
+- 🆕 **程序更新** - 从面板检查最新稳定版本，下载校验后更新，保留配置、凭据和服务状态。
 - 🔐 **凭据保护** - Token 隐藏输入、独立保存，面板及日志不显示完整凭据。
 - 📦 **单文件部署** - 提供 Linux amd64 / arm64 程序，运行时无需 Go、Python、Node、curl 或 jq。
 
@@ -78,14 +79,23 @@ cfddns
 
 ### Cloudflare Token 设置
 
-创建一个**用户 API Token**，资源范围选择需要管理的 Zone，并赋予以下权限：
+从 **v0.1.1** 起支持用户级和账户级 API Token。两种类型都需要将资源范围限定到要管理的 Zone，并赋予以下权限：
 
 | 权限 | 用途 |
 | --- | --- |
 | `Zone → Zone → Read` | 读取可访问的 Zone |
 | `Zone → DNS → Edit` | 读取、创建和更新 DNS 记录 |
 
-Token 输入不回显，只支持 API Token，不支持全局 API Key。当前使用用户 Token 验证接口，账户级 Token 的专用验证路由尚未接入。
+| Token 类型 | Cloudflare 创建位置 | Account ID | 验证接口 |
+| --- | --- | --- | --- |
+| 用户级 | My Profile → API Tokens | 不需要 | `/user/tokens/verify` |
+| 账户级 | Manage Account → Account API Tokens | 需要，32 位十六进制 | `/accounts/{account_id}/tokens/verify` |
+
+在面板中隐藏输入 Token 后，选择对应类型。以 `cfat_` 开头的 Token 默认选择账户级，继续填写它所属账户的 Account ID；这就是 Cloudflare 验证示例中 `/accounts/` 后的 ID，不能填 Zone ID 或 Token ID。程序会按指定账户筛选可访问的 Zone。两种类型的区别见 [Cloudflare 官方说明](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)，账户级验证路径见 [API 文档](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/verify/)。
+
+Token 输入不回显，只支持 API Token，不支持全局 API Key。本程序验证当前 Token 并管理 DNS，不需要额外授予账户枚举或 `Account API Tokens Read / Write` 等 Token 管理权限。
+
+菜单 `4` 可同时更换 Token 类型、Token 和 Account ID，验证失败保留原凭据。HTTP 401 表示身份验证失败：除类型和验证接口不匹配外，也要检查 Token 是否复制完整、是否过期或撤销，以及 Account ID 是否属于该 Token；补上 ID 并不能修复所有 401。
 
 域名可填写 `@`（根域名）、`home`（单级子域）或 `home.example.com`（完整域名）；多级子域填写完整域名，国际化域名使用 ASCII/Punycode。
 
@@ -112,6 +122,7 @@ Token 输入不回显，只支持 API Token，不支持全局 API Key。当前�
 10. 网络与配置诊断
 11. 设置 DNS TTL
 12. 卸载 DDNS
+13. 检查 / 更新程序
  0. 退出
 ```
 
@@ -148,6 +159,14 @@ Token 输入不回显，只支持 API Token，不支持全局 API Key。当前�
 
 菜单 `2` 默认读取本地状态，可选择只读刷新云端；菜单 `7` 执行同步；菜单 `9` 查看 journald 最近 100 行日志；菜单 `10` 只读检查网络和配置。
 
+### 检查和更新程序
+
+从 **v0.1.1** 起，在面板选择 `13. 检查 / 更新程序`，程序会检查 GitHub 最新稳定版并显示当前版本和目标版本。确认后自动下载对应架构的程序及 SHA-256 校验文件，验证通过后更新已安装程序，保留配置、凭据和原有服务启停、自启状态。
+
+下载或校验失败不会替换当前程序；安装失败会尝试恢复旧程序、配置、凭据和服务状态。更新器本身不发起云端 DNS 写入。更新成功后当前面板退出，重新输入 `cfddns`（普通账号用 `sudo cfddns`）进入新版面板。
+
+**从 v0.1.0 首次升级：**旧面板没有菜单 `13`，请先执行上方一键命令下载 v0.1.1 或更高版本，在新面板选择 `1. 安装 / 初始化 DDNS`，保留现有配置重新安装。也可选择新版面板的菜单 `13`，即使面板已是最新版本，仍可确认重新安装，以替换系统中的旧程序。仅打开下载后的新版面板不会自动完成系统升级；先完成重装或更新，再从菜单 `4` 配置账户级 Token。后续升级直接使用菜单 `13`。
+
 <details>
 <summary>本地文件、权限和卸载说明</summary>
 
@@ -155,12 +174,12 @@ Token 输入不回显，只支持 API Token，不支持全局 API Key。当前�
 | --- | --- |
 | `/usr/local/bin/cfddns` | 程序，`0755` |
 | `/etc/cfddns/config.json` | 带版本号的 JSON 配置，`0600` |
-| `/etc/cfddns/token` | 独立 Token 文件，`0600` |
+| `/etc/cfddns/token` | 独立凭据文件，包含 Token 和可选 Account ID，`0600` |
 | `/etc/cfddns/operation.lock` | 跨进程操作锁，`0600` |
 | `/var/lib/cfddns/state.json` | 分协议运行状态，`0600` |
 | `/etc/systemd/system/cfddns.service` | systemd 单元，`0644` |
 
-配置及状态目录为 `0700`。Token 不写入服务参数或普通状态；文件通过同目录临时文件、同步和原子替换保存。本地安装失败会尝试回滚文件及服务状态，首次同步结果单独显示，云端变更不会自动撤销。
+配置及状态目录为 `0700`。Token 不写入服务参数或普通状态；文件通过同目录临时文件、同步和原子替换保存。v0.1.1 将 Token 和 Account ID 一起写入带版本号的 JSON 凭据文件，避免更换凭据时两项不一致；仍兼容 v0.1.0 的纯文本 Token，重新保存时使用新格式，无需手工编辑 `config.json`。本地安装失败会尝试回滚文件及服务状态，首次同步结果单独显示，云端变更不会自动撤销。
 
 卸载请从菜单 `12` 操作，会停止并禁用服务，删除程序和服务文件，**保留云端 DNS 记录**。本地配置、Token 和状态可以选择保留。选择删除时仍保留操作锁及配置目录，确保等待锁的进程继续共享同一把锁。卸载成功后面板退出。
 
@@ -220,6 +239,13 @@ $env:GOCACHE = Join-Path $PWD '.cache\go-build'
 自动化测试覆盖同步、IP 筛选、Token 脱敏、原子保存、进程锁、安装回滚和菜单输入。一键脚本检查、Linux 竞态检测、静态检查和双架构构建已通过 [GitHub Actions](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42027880426)，公开一键命令也已在 Linux 中验证下载、校验及打开面板。真实 systemd 与 Cloudflare Token 仍待验收，详细记录见 [TESTING.md](TESTING.md)。
 
 ## 更新日志
+
+### v0.1.1
+
+- 🆕 新增面板程序更新入口，检查最新稳定版、下载校验并保留配置和服务状态。
+- 🔑 支持账户级 API Token，按 Account ID 使用对应验证接口并筛选 Zone。
+- 🔐 将 Token 与 Account ID 原子保存，验证失败保留原凭据，兼容已有用户级 Token 配置。
+- 🧭 安装与更换 Token 时可选择类型，身份验证失败时提示检查类型及 Account ID。
 
 ### v0.1.0
 

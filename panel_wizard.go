@@ -25,20 +25,20 @@ func (p *Panel) install(ctx context.Context) error {
 	cfg, err := p.store.LoadConfig()
 	hadConfig := err == nil
 	baseline := cfg
-	var token string
+	var credentials Credentials
 	if err == nil {
 		p.printf("检测到已有配置，重复安装将保留域名、凭据和设置。\n")
-		token, err = p.store.LoadToken()
+		credentials, err = p.store.LoadCredentials()
 		if err != nil {
 			return err
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		p.printf("准备目标 Zone 的 Zone Read、DNS Edit 权限的 API Token。仅支持 API Token，不支持全局 API Key。\n全部管理记录会设为仅 DNS，不需要配置域名证书。输入 q 可取消向导。\n")
-		token, err = p.secret()
+		credentials, err = p.readCredentials("")
 		if err != nil {
 			return err
 		}
-		api := p.apiFactory(token)
+		api := p.apiFactory(credentials.Token, credentials.AccountID)
 		p.printf("正在验证 Token 并分页读取 Zone……\n")
 		if err := api.VerifyToken(ctx); err != nil {
 			return err
@@ -110,6 +110,7 @@ func (p *Panel) install(ctx context.Context) error {
 		return err
 	}
 	p.summary(cfg)
+	p.describeCredentials(credentials)
 	p.printf("程序：%s\n配置目录：%s\n状态目录：%s\n", p.store.Paths.Binary, p.store.Paths.ConfigDir, p.store.Paths.StateDir)
 	if !HasSystemd() {
 		p.printf("未检测到 systemd：安装后请从菜单 8 选择前台常驻；关闭会话会停止同步。\n")
@@ -127,8 +128,8 @@ func (p *Panel) install(ctx context.Context) error {
 	}
 	current, currentErr := p.store.LoadConfig()
 	if hadConfig {
-		currentToken, tokenErr := p.store.LoadToken()
-		if currentErr != nil || tokenErr != nil || !reflect.DeepEqual(current, baseline) || currentToken != token {
+		currentCredentials, tokenErr := p.store.LoadCredentials()
+		if currentErr != nil || tokenErr != nil || !reflect.DeepEqual(current, baseline) || currentCredentials != credentials {
 			unlock()
 			return errors.New("配置或凭据已在向导期间被更新，请重新进入安装以保留最新设置")
 		}
@@ -136,7 +137,7 @@ func (p *Panel) install(ctx context.Context) error {
 		unlock()
 		return errors.New("配置已在向导期间被其他进程创建或不可读取，请重新打开面板")
 	}
-	err = InstallLocal(ctx, p.store.Paths, p.store, cfg, token)
+	err = InstallLocal(ctx, p.store.Paths, p.store, cfg, credentials.Token, credentials.AccountID)
 	unlock()
 	if err != nil {
 		return fmt.Errorf("本地安装失败（尚未发起云端 DNS 写入）：%w", err)
@@ -424,48 +425,19 @@ func (p *Panel) updateToken(ctx context.Context) error {
 		return err
 	}
 	p.printf("新 Token 需要管理 Zone 的 Zone Read 和 DNS Edit 权限。验证失败将保留旧凭据。\n")
-	token, err := p.secret()
+	previous, err := p.store.LoadCredentials()
 	if err != nil {
 		return err
 	}
-	api := p.apiFactory(token)
-	if err := api.VerifyToken(ctx); err != nil {
-		return err
-	}
-	zones, err := api.ListZones(ctx)
+	credentials, err := p.readCredentials(previous.AccountID)
 	if err != nil {
 		return err
 	}
-	allowed := make(map[string]bool)
-	for _, z := range zones {
-		allowed[z.ID] = true
-	}
-	unlock, err := p.store.Acquire(ctx)
+	wasActive, err := p.replaceCredentials(ctx, credentials)
 	if err != nil {
 		return err
 	}
-	cfg, err := p.store.LoadConfig()
-	wasActive := HasSystemd() && GetServiceStatus().Active
-	if err == nil {
-		for _, r := range cfg.Records {
-			if !allowed[r.ZoneID] {
-				err = fmt.Errorf("新 Token 无权访问 %s，已保留旧凭据", r.ZoneName)
-				break
-			}
-			if _, readErr := api.FindRecords(ctx, r.ZoneID, r.Name); readErr != nil {
-				err = fmt.Errorf("验证 DNS 读取权限失败，已保留旧凭据：%w", readErr)
-				break
-			}
-		}
-	}
-	if err == nil {
-		err = p.store.SaveToken(token)
-	}
-	unlock()
-	if err != nil {
-		return err
-	}
-	p.printf("Token 已验证并安全替换（不显示凭据）。DNS Edit 权限由 Cloudflare 在写入时校验。\n")
+	p.printf("Token 及所属类型已验证并安全替换（不显示凭据）。DNS Edit 权限由 Cloudflare 在写入时校验。\n")
 	if wasActive {
 		if err := ServiceAction(ctx, "restart"); err != nil {
 			return fmt.Errorf("Token 已保存，但服务重启失败：%w", err)

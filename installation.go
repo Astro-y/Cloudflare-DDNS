@@ -43,14 +43,21 @@ func (s fileSnapshot) restore() error {
 
 // installFiles has injected system operations so rollback is tested without
 // touching the host's binaries, configuration or service manager.
-func installFiles(ctx context.Context, paths Paths, store *Store, cfg Config, token string, systemd bool, prior ServiceStatus, executable func() (string, error), run func(context.Context, ...string) error) (result error) {
+func installFiles(ctx context.Context, paths Paths, store *Store, cfg Config, token string, systemd bool, prior ServiceStatus, executable func() (string, error), run func(context.Context, ...string) error, accountID ...string) (result error) {
 	if store.Paths != paths {
 		return errors.New("安装路径与配置存储路径不一致")
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		return err
 	}
-	if err := validateTokenText(token); err != nil {
+	credentials := Credentials{Version: 1, Token: token}
+	if len(accountID) > 0 {
+		credentials.AccountID = accountID[0]
+	}
+	if len(accountID) > 1 {
+		return errors.New("只能设置一个账户 ID")
+	}
+	if err := validateCredentials(credentials); err != nil {
 		return err
 	}
 	var snapshots []fileSnapshot
@@ -139,7 +146,7 @@ func installFiles(ctx context.Context, paths Paths, store *Store, cfg Config, to
 	if err := store.SaveConfig(cfg); err != nil {
 		return err
 	}
-	if err := store.SaveToken(token); err != nil {
+	if err := store.SaveCredentials(credentials); err != nil {
 		return err
 	}
 	source, err := executable()

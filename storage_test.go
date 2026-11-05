@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,6 +105,141 @@ func TestStoreInvalidWritePreservesOldValue(t *testing.T) {
 	token, _ := s.LoadToken()
 	if token != "old-secret" {
 		t.Fatal("old token lost")
+	}
+}
+
+func TestCredentialsLegacyPlaintextAndAtomicAccountPair(t *testing.T) {
+	s := NewStore(testPaths(t))
+	if err := atomicWrite(s.Paths.TokenFile(), []byte("legacy-user-token\n"), 0600, true); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := s.LoadCredentials()
+	if err != nil || legacy.Version != 1 || legacy.Token != "legacy-user-token" || legacy.AccountID != "" {
+		t.Fatal("legacy credentials were not retained", err)
+	}
+	want := Credentials{Version: 1, Token: "cfat_fake-account-token", AccountID: "0123456789abcdef0123456789abcdef"}
+	if err := s.SaveCredentials(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadCredentials()
+	if err != nil || got != want {
+		t.Fatal("account credential pair did not round-trip", err)
+	}
+	token, err := s.LoadToken()
+	if err != nil || token != want.Token {
+		t.Fatal("legacy LoadToken accessor lost account token", err)
+	}
+	data, err := os.ReadFile(s.Paths.TokenFile())
+	if err != nil || !bytes.Contains(data, []byte(`"account_id"`)) || !bytes.Contains(data, []byte(`"version": 1`)) {
+		t.Fatal("account metadata is not in the same versioned credential file", err)
+	}
+	if err := s.SaveToken("replacement-user-token"); err != nil {
+		t.Fatal(err)
+	}
+	user, err := s.LoadCredentials()
+	if err != nil || user.AccountID != "" || user.Token != "replacement-user-token" {
+		t.Fatal("switching back to a user token retained account metadata", err)
+	}
+}
+
+func TestInvalidCredentialsWritePreservesEntirePair(t *testing.T) {
+	s := NewStore(testPaths(t))
+	old := Credentials{Version: 1, Token: "old-account-token", AccountID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	if err := s.SaveCredentials(old); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(s.Paths.TokenFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, invalid := range map[string]Credentials{
+		"account":         {Version: 1, Token: "new-token", AccountID: "../../accounts"},
+		"version":         {Version: 2, Token: "new-token"},
+		"missing-version": {Token: "new-token"},
+		"token":           {Version: 1, Token: "new\ntoken"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := s.SaveCredentials(invalid); err == nil {
+				t.Fatal("invalid credential pair accepted")
+			}
+			after, err := os.ReadFile(s.Paths.TokenFile())
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("failed validation changed stored credentials", err)
+			}
+			got, err := s.LoadCredentials()
+			if err != nil || got != old {
+				t.Fatal("old account/token pair lost", err)
+			}
+		})
+	}
+}
+
+func TestCredentialsMalformedFilesNeverExposeToken(t *testing.T) {
+	s := NewStore(testPaths(t))
+	secret := "never-echo-this-fake-secret"
+	valid := `{"version":1,"token":"` + secret + `","account_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
+	for name, content := range map[string]string{
+		"syntax":          `{"version":1,"token":"` + secret,
+		"unknown-field":   `{"version":1,"token":"` + secret + `","` + secret + `":true}`,
+		"trailing-json":   valid + ` {"` + secret + `":true}`,
+		"future-version":  `{"version":2,"token":"` + secret + `"}`,
+		"missing-version": `{"token":"` + secret + `"}`,
+		"bad-account":     `{"version":1,"token":"` + secret + `","account_id":"` + secret + `"}`,
+		"array":           `["` + secret + `"]`,
+		"invalid-token":   `{"version":1,"token":"` + secret + `\n"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := atomicWrite(s.Paths.TokenFile(), []byte(content), 0600, true); err != nil {
+				t.Fatal(err)
+			}
+			credentials, err := s.LoadCredentials()
+			if err == nil {
+				t.Fatal("malformed credentials accepted")
+			}
+			if strings.Contains(err.Error(), secret) || credentials != (Credentials{}) {
+				t.Fatal("invalid credential file exposed secret data")
+			}
+		})
+	}
+}
+
+func TestAtomicCredentialsReadersAlwaysSeeMatchingPair(t *testing.T) {
+	s := NewStore(testPaths(t))
+	a := Credentials{Version: 1, Token: "token-A", AccountID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	b := Credentials{Version: 1, Token: "token-B", AccountID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+	if err := s.SaveCredentials(a); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	failures := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 80; i++ {
+			got, err := s.LoadCredentials()
+			if err == nil && got != a && got != b {
+				err = errors.New("reader saw mismatched account/token pair")
+			}
+			if err != nil {
+				failures <- err
+				return
+			}
+		}
+	}()
+	for i := 0; i < 40; i++ {
+		value := a
+		if i%2 == 0 {
+			value = b
+		}
+		if err := s.SaveCredentials(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg.Wait()
+	select {
+	case err := <-failures:
+		t.Fatal(err)
+	default:
 	}
 }
 

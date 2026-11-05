@@ -32,6 +32,14 @@ func (p Paths) StateFile() string  { return filepath.Join(p.StateDir, "state.jso
 
 type Store struct{ Paths Paths }
 
+// Credentials are kept together in the private token file so a crash cannot
+// leave a Token paired with a different account's verification endpoint.
+type Credentials struct {
+	Version   int    `json:"version"`
+	Token     string `json:"token"`
+	AccountID string `json:"account_id,omitempty"`
+}
+
 func NewStore(paths Paths) *Store { return &Store{Paths: paths} }
 
 func (s *Store) LoadConfig() (Config, error) {
@@ -72,22 +80,61 @@ func (s *Store) SaveState(state State) error {
 }
 
 func (s *Store) LoadToken() (string, error) {
-	b, err := readPrivateFile(s.Paths.TokenFile(), 4096)
+	credentials, err := s.LoadCredentials()
+	return credentials.Token, err
+}
+
+func (s *Store) LoadCredentials() (Credentials, error) {
+	// JSON escaping can make the serialized form larger than the Token itself.
+	b, err := readPrivateFile(s.Paths.TokenFile(), 32<<10)
 	if err != nil {
-		return "", err
+		return Credentials{}, err
 	}
-	token := strings.TrimSpace(string(b))
-	if err := validateTokenText(token); err != nil {
-		return "", err
+	defer clear(b)
+	data := bytes.TrimSpace(b)
+	credentials := Credentials{}
+	if len(data) > 0 && (data[0] == '{' || data[0] == '[') {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&credentials) != nil || decoder.Decode(new(any)) != io.EOF {
+			// Decoder errors can repeat input text; do not expose secret file data.
+			return Credentials{}, errors.New("凭据文件格式无效，请在面板中重新设置 Token")
+		}
+	} else {
+		// v0.1.0 stored a plain-text user Token with no account metadata.
+		credentials = Credentials{Version: 1, Token: string(data)}
 	}
-	return token, nil
+	if err := validateCredentials(credentials); err != nil {
+		return Credentials{}, err
+	}
+	return credentials, nil
 }
 
 func (s *Store) SaveToken(token string) error {
-	if err := validateTokenText(token); err != nil {
+	return s.SaveCredentials(Credentials{Version: 1, Token: token})
+}
+
+func (s *Store) SaveCredentials(credentials Credentials) error {
+	if err := validateCredentials(credentials); err != nil {
 		return err
 	}
-	return atomicWrite(s.Paths.TokenFile(), []byte(token+"\n"), 0600, true)
+	b, err := json.MarshalIndent(credentials, "", "  ")
+	if err != nil {
+		return errors.New("无法编码凭据文件")
+	}
+	b = append(b, '\n')
+	defer clear(b)
+	return atomicWrite(s.Paths.TokenFile(), b, 0600, true)
+}
+
+func validateCredentials(credentials Credentials) error {
+	if credentials.Version != 1 {
+		return errors.New("不支持的凭据文件版本")
+	}
+	if err := validateTokenText(credentials.Token); err != nil {
+		return err
+	}
+	return ValidateAccountID(credentials.AccountID)
 }
 
 func validateTokenText(token string) error {

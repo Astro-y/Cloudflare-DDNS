@@ -24,13 +24,13 @@ type Panel struct {
 	in         *bufio.Reader
 	out        io.Writer
 	inputFile  *os.File
-	apiFactory func(string) CloudAPI
+	apiFactory func(string, string) CloudAPI
 	resolver   AddressResolver
 }
 
 func NewPanel(store *Store, input io.Reader, output io.Writer) *Panel {
 	p := &Panel{ctx: context.Background(), store: store, in: bufio.NewReader(input), out: output,
-		apiFactory: func(token string) CloudAPI { return NewCFClient(token) }, resolver: NewIPResolver()}
+		apiFactory: func(token, accountID string) CloudAPI { return NewCFClient(token, accountID) }, resolver: NewIPResolver()}
 	p.inputFile, _ = input.(*os.File)
 	return p
 }
@@ -207,7 +207,7 @@ func (p *Panel) showMenu() {
 	if runtime.GOOS != "linux" {
 		p.printf("运行环境：%s/%s（安装和后台运行仅支持 Linux amd64/arm64）\n", runtime.GOOS, runtime.GOARCH)
 	}
-	p.printf("\n 1. 安装 / 初始化 DDNS\n 2. 查看详细状态\n 3. 修改域名 / 启用或关闭 IPv4、IPv6\n 4. 更新 Cloudflare API Token\n 5. 设置检查间隔\n 6. 设置 IP 来源 / 网卡\n 7. 立即同步\n 8. 管理后台服务\n 9. 查看运行日志\n10. 网络与配置诊断\n11. 设置 DNS TTL\n12. 卸载 DDNS\n 0. 退出\n")
+	p.printf("\n 1. 安装 / 初始化 DDNS\n 2. 查看详细状态\n 3. 修改域名 / 启用或关闭 IPv4、IPv6\n 4. 更新 Cloudflare API Token\n 5. 设置检查间隔\n 6. 设置 IP 来源 / 网卡\n 7. 立即同步\n 8. 管理后台服务\n 9. 查看运行日志\n10. 网络与配置诊断\n11. 设置 DNS TTL\n12. 卸载 DDNS\n13. 检查 / 更新程序\n 0. 退出\n")
 }
 
 func (p *Panel) dispatch(ctx context.Context, choice string) error {
@@ -215,9 +215,9 @@ func (p *Panel) dispatch(ctx context.Context, choice string) error {
 		return p.install(ctx)
 	}
 	switch choice {
-	case "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12":
+	case "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13":
 	default:
-		p.printf("无效选项，请输入 0 到 12。\n")
+		p.printf("无效选项，请输入 0 到 13。\n")
 		return nil
 	}
 	if _, err := p.store.LoadConfig(); err != nil {
@@ -274,6 +274,8 @@ func (p *Panel) dispatch(ctx context.Context, choice string) error {
 		})
 	case "12":
 		return p.uninstall(ctx)
+	case "13":
+		return p.updateProgram(ctx)
 	}
 	return nil
 }
@@ -317,11 +319,11 @@ func (p *Panel) edit(ctx context.Context, fn func(context.Context, *Config) erro
 }
 
 func (p *Panel) api() (CloudAPI, error) {
-	token, err := p.store.LoadToken()
+	credentials, err := p.store.LoadCredentials()
 	if err != nil {
 		return nil, err
 	}
-	return p.apiFactory(token), nil
+	return p.apiFactory(credentials.Token, credentials.AccountID), nil
 }
 
 func (p *Panel) details(ctx context.Context) error {
@@ -334,6 +336,9 @@ func (p *Panel) details(ctx context.Context) error {
 		return err
 	}
 	p.summary(cfg)
+	if credentials, err := p.store.LoadCredentials(); err == nil {
+		p.describeCredentials(credentials)
+	}
 	for _, r := range cfg.Records {
 		p.printf("\n%s Zone ID：%s\n记录 ID：%s\n", protocolText(r.Type), r.ZoneID, orText(r.RecordID, "待首次创建"))
 		if st := state.Records[r.Type]; st != nil && st.Name == r.Name {

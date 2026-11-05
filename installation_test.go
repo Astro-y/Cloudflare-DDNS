@@ -151,3 +151,48 @@ func TestInstallWithoutSystemdDoesNotCreateUnit(t *testing.T) {
 		t.Fatal("non-systemd created unit", err)
 	}
 }
+
+func TestInstallAccountCredentialsAndRollbackTogether(t *testing.T) {
+	paths, store, executable := prepareInstall(t)
+	oldAccount := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	newAccount := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	run := func(context.Context, ...string) error { return nil }
+	if err := installFiles(context.Background(), paths, store, testConfig(), "old-account-token", true, ServiceStatus{}, executable, run, oldAccount); err != nil {
+		t.Fatal(err)
+	}
+	old := Credentials{Version: 1, Token: "old-account-token", AccountID: oldAccount}
+	got, err := store.LoadCredentials()
+	if err != nil || got != old {
+		t.Fatal("account installation did not persist paired credentials", err)
+	}
+	run = func(_ context.Context, args ...string) error {
+		if args[0] == "restart" {
+			return errors.New("simulated service activation failure")
+		}
+		return nil
+	}
+	if err := installFiles(context.Background(), paths, store, testConfig(), "new-account-token", true, ServiceStatus{Active: true, Enabled: true}, executable, run, newAccount); err == nil {
+		t.Fatal("expected activation failure")
+	}
+	got, err = store.LoadCredentials()
+	if err != nil || got != old {
+		t.Fatal("rollback did not restore both the old Token and Account ID", err)
+	}
+	unit, err := os.ReadFile(paths.UnitFile)
+	if err != nil || strings.Contains(string(unit), old.Token) || strings.Contains(string(unit), oldAccount) {
+		t.Fatal("credential metadata leaked into the service unit", err)
+	}
+}
+
+func TestInstallInvalidAccountIDDoesNotWriteFiles(t *testing.T) {
+	paths, store, executable := prepareInstall(t)
+	run := func(context.Context, ...string) error { t.Fatal("invalid credentials reached systemctl"); return nil }
+	if err := installFiles(context.Background(), paths, store, testConfig(), "test-token", true, ServiceStatus{}, executable, run, "invalid-account"); err == nil {
+		t.Fatal("invalid account accepted")
+	}
+	for _, path := range []string{paths.ConfigFile(), paths.TokenFile(), paths.Binary, paths.UnitFile} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("invalid account wrote a local file", err)
+		}
+	}
+}

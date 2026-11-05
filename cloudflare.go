@@ -57,6 +57,7 @@ func setCFRateLimit(key [32]byte, delay time.Duration) {
 type CFClient struct {
 	HTTPClient *http.Client
 	BaseURL    string
+	AccountID  string
 	token      string
 }
 
@@ -96,16 +97,37 @@ func IsNotFound(err error) bool {
 	return false
 }
 
-func NewCFClient(token string) *CFClient {
+func NewCFClient(token string, accountID ...string) *CFClient {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 15 * time.Second
 	transport.MaxResponseHeaderBytes = 64 << 10
-	return &CFClient{
+	client := &CFClient{
 		BaseURL: "https://api.cloudflare.com/client/v4",
 		token:   strings.TrimSpace(token),
 		HTTPClient: &http.Client{Transport: transport, Timeout: 20 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("Cloudflare API 不允许重定向") }},
 	}
+	if len(accountID) > 0 {
+		client.AccountID = accountID[0]
+	}
+	return client
+}
+
+// An empty Account ID identifies a user-owned token. Account-owned tokens must
+// specify their exact account ID; discovering accounts would need extra rights.
+func ValidateAccountID(id string) error {
+	if id == "" {
+		return nil
+	}
+	if len(id) != 32 {
+		return errors.New("Account ID 必须为 32 位十六进制字符串")
+	}
+	for _, char := range id {
+		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F') {
+			return errors.New("Account ID 必须为 32 位十六进制字符串")
+		}
+	}
+	return nil
 }
 
 type cfEnvelope struct {
@@ -235,8 +257,22 @@ func (c *CFClient) request(ctx context.Context, method, path string, body any) (
 }
 
 func (c *CFClient) VerifyToken(ctx context.Context) error {
-	envelope, err := c.request(ctx, http.MethodGet, "/user/tokens/verify", nil)
+	if err := ValidateAccountID(c.AccountID); err != nil {
+		return err
+	}
+	path := "/user/tokens/verify"
+	if c.AccountID != "" {
+		path = "/accounts/" + c.AccountID + "/tokens/verify"
+	}
+	envelope, err := c.request(ctx, http.MethodGet, path, nil)
 	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
+			if c.AccountID != "" {
+				return fmt.Errorf("账户级 Token 验证失败：%w；请确认 Account ID 与 Token 所属账户一致", err)
+			}
+			return fmt.Errorf("用户级 Token 验证失败：%w；若使用账户级 Token（如 cfat_ 前缀），请选择账户级并填写 Account ID", err)
+		}
 		return err
 	}
 	var token struct {
@@ -249,9 +285,16 @@ func (c *CFClient) VerifyToken(ctx context.Context) error {
 }
 
 func (c *CFClient) ListZones(ctx context.Context) ([]Zone, error) {
+	if err := ValidateAccountID(c.AccountID); err != nil {
+		return nil, err
+	}
 	var zones []Zone
 	for page := 1; page <= 10000; page++ {
-		envelope, err := c.request(ctx, http.MethodGet, fmt.Sprintf("/zones?per_page=50&page=%d", page), nil)
+		path := fmt.Sprintf("/zones?per_page=50&page=%d", page)
+		if c.AccountID != "" {
+			path += "&account.id=" + url.QueryEscape(c.AccountID)
+		}
+		envelope, err := c.request(ctx, http.MethodGet, path, nil)
 		if err != nil {
 			return nil, err
 		}

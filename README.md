@@ -37,7 +37,7 @@
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/main/install.sh)"
 ```
 
-脚本会自动识别 amd64 / arm64，下载当前发布版 `v0.1.0`，校验 SHA-256，然后打开中文面板。首次使用选择 `1. 安装 / 初始化 DDNS`，按提示完成配置；普通账号会通过 `sudo` 请求管理员权限，root 账号直接运行。
+脚本会自动识别 amd64 / arm64，下载当前发布版 `v0.1.1`，校验 SHA-256，然后打开中文面板。首次使用选择 `1. 安装 / 初始化 DDNS`，按提示完成配置；普通账号会通过 `sudo` 请求管理员权限，root 账号直接运行。
 
 首次下载需要 Bash、curl 和 `sha256sum`，安装完成后程序运行不依赖它们。重新执行该命令会再次进入面板，现有配置由面板保留；日常管理直接输入 `cfddns`（普通账号使用 `sudo cfddns`）。
 
@@ -47,9 +47,9 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/
 
 | 架构 | 程序 | 常见设备 |
 | --- | --- | --- |
-| amd64 | [cfddns-linux-amd64](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.0/cfddns-linux-amd64) | 常见 x86_64 服务器、虚拟机 |
-| arm64 | [cfddns-linux-arm64](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.0/cfddns-linux-arm64) | ARM64 服务器、部分单板电脑 |
-| SHA-256 | [SHA256SUMS](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.0/SHA256SUMS) | 下载后核对文件完整性 |
+| amd64 | [cfddns-linux-amd64](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.1/cfddns-linux-amd64) | 常见 x86_64 服务器、虚拟机 |
+| arm64 | [cfddns-linux-arm64](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.1/cfddns-linux-arm64) | ARM64 服务器、部分单板电脑 |
+| SHA-256 | [SHA256SUMS](https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.1/SHA256SUMS) | 下载后核对文件完整性 |
 
 下面的命令在目标 **Linux 主机** 的 shell 中执行。amd64 主机：
 
@@ -199,7 +199,7 @@ Token 输入不回显，只支持 API Token，不支持全局 API Key。本程�
 go mod download
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 .\scripts\check.ps1
-.\scripts\build.ps1 -Version '0.1.0'
+.\scripts\build.ps1 -Version '0.1.1'
 ```
 
 `check.ps1` 检查格式、测试及 `go vet`；`build.ps1` 默认执行主机测试和静态检查，再关闭 CGO 构建双架构程序，输出到 `dist`，附 `SHA256SUMS`。可用 `-OutputDirectory` 指定目录；已完成测试时可使用 `-SkipTests`。
@@ -214,13 +214,13 @@ go mod download
 go test -mod=readonly ./...
 go vet -mod=readonly ./...
 mkdir -p dist
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath -ldflags '-s -w -X main.version=0.1.0' -o dist/cfddns-linux-amd64 .
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -mod=readonly -trimpath -ldflags '-s -w -X main.version=0.1.0' -o dist/cfddns-linux-arm64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath -ldflags '-s -w -X main.version=0.1.1' -o dist/cfddns-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -mod=readonly -trimpath -ldflags '-s -w -X main.version=0.1.1' -o dist/cfddns-linux-arm64 .
 cd dist
 sha256sum cfddns-linux-amd64 cfddns-linux-arm64 > SHA256SUMS
 ```
 
-Linux 已安装 PowerShell 7 时也可运行 `pwsh ./scripts/build.ps1 -Version 0.1.0`。核对下载文件时，Windows 使用 `Get-FileHash -Algorithm SHA256`，Linux 使用 `sha256sum`；下载了两个架构及校验文件后可运行 `sha256sum -c SHA256SUMS`。
+Linux 已安装 PowerShell 7 时也可运行 `pwsh ./scripts/build.ps1 -Version 0.1.1`。核对下载文件时，Windows 使用 `Get-FileHash -Algorithm SHA256`，Linux 使用 `sha256sum`；下载了两个架构及校验文件后可运行 `sha256sum -c SHA256SUMS`。
 
 受限 Windows 环境若无法写入默认 Go 缓存，可先指定项目内缓存，再运行构建命令：
 
@@ -236,7 +236,7 @@ $env:GOCACHE = Join-Path $PWD '.cache\go-build'
 
 欢迎通过 [GitHub Issues](https://github.com/Astro-y/Cloudflare-DDNS/issues) 反馈问题或提交 Pull Request。报告问题时请附系统、架构、程序版本和已脱敏日志，勿提交 Token。
 
-自动化测试覆盖同步、IP 筛选、Token 脱敏、原子保存、进程锁、安装回滚和菜单输入。一键脚本检查、Linux 竞态检测、静态检查和双架构构建已通过 [GitHub Actions](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42027880426)，公开一键命令也已在 Linux 中验证下载、校验及打开面板。真实 systemd 与 Cloudflare Token 仍待验收，详细记录见 [TESTING.md](TESTING.md)。
+自动化测试覆盖同步、IP 筛选、Token 脱敏、原子保存、进程锁、安装回滚和菜单输入。一键脚本检查、Linux 竞态检测、静态检查和双架构构建已通过 [GitHub Actions](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42030554525)，公开一键命令也已在 Linux 中验证下载、校验及打开面板。真实 systemd 与 Cloudflare Token 仍待验收，详细记录见 [TESTING.md](TESTING.md)。
 
 ## 更新日志
 

@@ -4,7 +4,7 @@ umask 077
 
 # Only bootstrap the verified binary. Configuration and installation stay in
 # the Chinese panel so re-running this script preserves the existing workflow.
-CFDDNS_RELEASE='v0.1.0'
+CFDDNS_RELEASE='v0.1.1'
 CFDDNS_REPOSITORY='Astro-y/Cloudflare-DDNS'
 work_dir=''
 asset=''

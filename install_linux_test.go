@@ -222,7 +222,7 @@ func TestInstallerSupportedArchitecturesAndVerifiedTTYLaunch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			base := "https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.0/"
+			base := "https://github.com/Astro-y/Cloudflare-DDNS/releases/download/v0.1.1/"
 			lines := strings.Fields(string(downloads))
 			if len(lines) != 2 || !bytes.Contains(downloads, []byte(base+test.asset+"\n")) || !bytes.Contains(downloads, []byte(base+"SHA256SUMS\n")) {
 				t.Fatalf("unexpected release downloads: %s", downloads)

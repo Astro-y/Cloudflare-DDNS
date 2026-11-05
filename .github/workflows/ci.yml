@@ -27,7 +27,11 @@ jobs:
         run: ./scripts/build.ps1 -SkipTests
       - name: Smoke test public installer (exit panel)
         run: |
-          printf '0\n' | timeout 180 script --quiet --return --command 'bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/main/install.sh)"' /dev/null
+          log="$(mktemp)"
+          trap 'rm -f -- "$log"' EXIT
+          printf '0\n' | timeout 180 script --quiet --return --command 'bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/main/install.sh)"' /dev/null | tee "$log"
+          expected="$(./dist/cfddns-linux-amd64 --internal-version)"
+          grep -F "版本：$expected" "$log"
       - uses: actions/upload-artifact@v4
         with:
           name: cfddns-linux

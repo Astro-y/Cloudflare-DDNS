@@ -16,11 +16,18 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: test -z "$(gofmt -l *.go)"
+      - name: Check Linux bootstrap script
+        run: |
+          bash -n install.sh
+          shellcheck install.sh
       - run: go test -race -mod=readonly -coverprofile=coverage.out ./...
       - run: go vet -mod=readonly ./...
       - name: Build static Linux binaries
         shell: pwsh
         run: ./scripts/build.ps1 -SkipTests
+      - name: Smoke test public installer (exit panel)
+        run: |
+          printf '0\n' | timeout 180 script --quiet --return --command 'bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/main/install.sh)"' /dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: cfddns-linux

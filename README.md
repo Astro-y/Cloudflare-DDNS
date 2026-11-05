@@ -28,7 +28,19 @@
 
 ## 安装部署
 
-### 方式 1：下载程序（推荐）
+### 方式 1：一键下载安装（推荐）
+
+在 **Linux 交互式 SSH 终端** 中复制执行：
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Astro-y/Cloudflare-DDNS/main/install.sh)"
+```
+
+脚本会自动识别 amd64 / arm64，下载当前发布版 `v0.1.0`，校验 SHA-256，然后打开中文面板。首次使用选择 `1. 安装 / 初始化 DDNS`，按提示完成配置；普通账号会通过 `sudo` 请求管理员权限，root 账号直接运行。
+
+首次下载需要 Bash、curl 和 `sha256sum`，安装完成后程序运行不依赖它们。重新执行该命令会再次进入面板，现有配置由面板保留；日常管理直接输入 `cfddns`（普通账号使用 `sudo cfddns`）。
+
+### 方式 2：手动下载程序
 
 支持 **Linux amd64 / arm64**。从 [Releases](https://github.com/Astro-y/Cloudflare-DDNS/releases) 下载对应架构的程序，并上传到目标主机：
 

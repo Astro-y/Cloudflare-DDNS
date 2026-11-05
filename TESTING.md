@@ -16,8 +16,8 @@
 | 真实 systemd、开机自启、异常恢复与卸载 | 无真实 systemd 主机，未验收 |
 | 真实 Cloudflare Token 与 Zone | 未提供测试凭据，未验收 |
 | 一键入口实际启动 | 公开 `bash -c "$(curl -fsSL …/main/install.sh)"` 命令在 Linux CI 中下载真实 Release、核对 SHA-256 并打开面板后退出，通过；未执行系统安装或 DNS 修改 |
-| GitHub Actions | [Go checks #42030554525](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42030554525) 已完成，结论 `success`；含 `bash -n`、ShellCheck、Linux 集成测试及公开入口启动验证 |
-| v0.1.1 账户级 Token 回归 | Windows 测试及 [Linux CI](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42030554525) 通过；验证路由、账户筛选、凭据原子保存和旧版保护均使用模拟服务，未连接用户真实账户 |
+| GitHub Actions | [Go checks #42031188879](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42031188879) 已完成，结论 `success`；含 `bash -n`、ShellCheck、Linux 集成测试及公开入口启动验证 |
+| v0.1.1 账户级 Token 回归 | Windows 测试及 [Linux CI](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42031188879) 通过；验证路由、账户筛选、凭据原子保存和旧版保护均使用模拟服务，未连接用户真实账户 |
 | v0.1.1 面板更新回归 | 版本比较、最新正式版查询、下载与摘要校验、保留本地设置及失败回滚的自动化测试和 Linux 竞态检测通过，真实 systemd 更新仍待验收 |
 
 以上记录对应 2026-11-05 的交付。本地构建主机为 Windows，Go 版本为 `go1.25.12 windows/amd64`，发布文件的架构及关闭 CGO 已通过 `go version -m` 核对。上传 GitHub 后，另在 Ubuntu runner 实际执行了 Linux amd64 全项目测试和竞态检测，测试集包含 netlink 地址过滤及 PTY 隐藏输入/中断恢复测试；arm64 测试程序仍仅完成交叉编译。

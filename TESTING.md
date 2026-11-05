@@ -7,17 +7,17 @@
 | 项目 | 当前可确认结果 |
 | --- | --- |
 | Windows IP 模块测试 | 已通过，包含本地 HTTPS 测试服务器及强制协议测试 |
-| Linux amd64 全项目测试程序 | `CGO_ENABLED=0 go test -mod=readonly -c` 交叉编译通过，未在 Linux 执行 |
+| Linux amd64 全项目测试及竞态检测 | GitHub Actions 的 Ubuntu runner 实际执行 `go test -race -mod=readonly -coverprofile=coverage.out ./...`，通过 |
 | Linux arm64 全项目测试程序 | `CGO_ENABLED=0 go test -mod=readonly -c` 交叉编译通过，未在 Linux 执行 |
 | Windows 格式与全项目测试 | 最终源码经 `scripts/check.ps1` 检查通过，`go test -mod=readonly ./...` 通过（3.692 秒） |
 | Windows / Linux amd64 / Linux arm64 静态检查 | 三个构建目标的 `go vet -mod=readonly ./...` 均通过 |
 | Linux 双架构发布构建与校验文件 | `scripts/build.ps1 -Version 0.1.0` 构建通过；最终源码重建产物位于 `dist`，`CGO_ENABLED=0`，附 `SHA256SUMS` |
-| Linux 竞态检测 | 当前 Windows 环境未执行 Linux 竞态检测 |
+| Linux CI 构建 | Ubuntu runner 上的静态检查、PowerShell 双架构构建及产物上传均通过 |
 | 真实 systemd、开机自启、异常恢复与卸载 | 无真实 systemd 主机，未验收 |
 | 真实 Cloudflare Token 与 Zone | 未提供测试凭据，未验收 |
-| GitHub Actions | 已提供工作流定义，未声称该工作流已触发或通过 |
+| GitHub Actions | [Go checks #42026374275](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42026374275) 已完成，结论 `success` |
 
-以上记录对应 2026-11-05 的交付，构建主机为 Windows，Go 版本为 `go1.25.12 windows/amd64`。Linux 目标的测试程序包含 netlink 地址过滤及 PTY 隐藏输入/中断恢复测试，当前仅确认编译通过。发布文件的架构及关闭 CGO 已通过 `go version -m` 核对。
+以上记录对应 2026-11-05 的交付。本地构建主机为 Windows，Go 版本为 `go1.25.12 windows/amd64`，发布文件的架构及关闭 CGO 已通过 `go version -m` 核对。上传 GitHub 后，另在 Ubuntu runner 实际执行了 Linux amd64 全项目测试和竞态检测，测试集包含 netlink 地址过滤及 PTY 隐藏输入/中断恢复测试；arm64 测试程序仍仅完成交叉编译。
 
 ## 本地检查
 
@@ -40,7 +40,7 @@ CGO_ENABLED=1 go test -race -mod=readonly -coverprofile=coverage.out ./...
 go vet -mod=readonly ./...
 ```
 
-`.github/workflows/ci.yml` 配置了 Linux 竞态测试、静态检查、双架构构建及产物上传。它是待运行的持续集成定义，不能代替本次实际执行记录。
+`.github/workflows/ci.yml` 配置了 Linux 竞态测试、静态检查、双架构构建及产物上传。本次实际运行记录见上表链接；后续修改的检查结果以对应提交的 Actions 运行记录为准。
 
 ## 自动化测试范围
 

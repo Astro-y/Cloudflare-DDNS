@@ -217,7 +217,7 @@ $env:GOCACHE = Join-Path $PWD '.cache\go-build'
 
 欢迎通过 [GitHub Issues](https://github.com/Astro-y/Cloudflare-DDNS/issues) 反馈问题或提交 Pull Request。报告问题时请附系统、架构、程序版本和已脱敏日志，勿提交 Token。
 
-自动化测试覆盖同步、IP 筛选、Token 脱敏、原子保存、进程锁、安装回滚和菜单输入。Linux 竞态检测、静态检查和双架构构建已通过 [GitHub Actions](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42026374275)。真实 systemd 与 Cloudflare Token 仍待验收，详细记录见 [TESTING.md](TESTING.md)。
+自动化测试覆盖同步、IP 筛选、Token 脱敏、原子保存、进程锁、安装回滚和菜单输入。一键脚本检查、Linux 竞态检测、静态检查和双架构构建已通过 [GitHub Actions](https://github.com/Astro-y/Cloudflare-DDNS/actions/runs/42027880426)，公开一键命令也已在 Linux 中验证下载、校验及打开面板。真实 systemd 与 Cloudflare Token 仍待验收，详细记录见 [TESTING.md](TESTING.md)。
 
 ## 更新日志
 

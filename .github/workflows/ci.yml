@@ -1,0 +1,27 @@
+name: Go checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: test -z "$(gofmt -l *.go)"
+      - run: go test -race -mod=readonly -coverprofile=coverage.out ./...
+      - run: go vet -mod=readonly ./...
+      - name: Build static Linux binaries
+        shell: pwsh
+        run: ./scripts/build.ps1 -SkipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cfddns-linux
+          path: dist/

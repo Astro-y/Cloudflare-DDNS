@@ -1,0 +1,6 @@
+/.cache/
+/.build-cache/
+/dist/
+*.test
+*.exe
+coverage.out
